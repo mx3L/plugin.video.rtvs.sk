@@ -20,54 +20,57 @@
 # *
 # */
 import os
-import urllib2
-
-sys.path.append(os.path.join (os.path.dirname(__file__), 'resources', 'lib'))
-import rtvs
-import xbmcprovider, xbmcaddon, xbmcutil, xbmcgui, xbmcplugin, xbmc
-import util, resolver
+import util, xbmcprovider, xbmcutil, resolver
 from provider import ResolveException
+from Plugins.Extensions.archivCZSK.archivczsk import ArchivCZSK
 
 __scriptid__ = 'plugin.video.rtvs.sk'
 __scriptname__ = 'rtvs.sk'
-__addon__ = xbmcaddon.Addon(id=__scriptid__)
-__language__ = __addon__.getLocalizedString
+__addon__ = ArchivCZSK.get_xbmc_addon(__scriptid__)
 
-settings = {'downloads':__addon__.getSetting('downloads'), 'quality':__addon__.getSetting('quality')}
+__language__ = __addon__.getLocalizedString
+__settings__ = __addon__.getSetting
+
+sys.path.append(os.path.join (__addon__.getAddonInfo('path'), 'resources', 'lib'))
+import rtvs
+settings = {'quality':__addon__.getSetting('quality')}
+
 
 class RtvsXBMCContentProvider(xbmcprovider.XBMCMultiResolverContentProvider):
 
-    def play(self, item):
-        stream = self.resolve(item['url'])
+    def play(self, params):
+        stream = self.resolve(params['play'])
         print type(stream)
         if type(stream) == type([]):
+            sdict={}
+            for s in stream:
+                if s['surl'] not in sdict:
+                    sdict[s['surl']] = s
+                if len(sdict) > 1:
+                    break
+            else:
+                return xbmcprovider.XBMCMultiResolverContentProvider.play(self,params)
+
             # resolved to mutliple files, we'll feed playlist and play the first one
-            playlist = xbmc.PlayList(xbmc.PLAYLIST_VIDEO)
-            playlist.clear()
+            playlist = []
+            i = 0
             for video in stream:
-                li = xbmcgui.ListItem(label=video['title'], path=video['url'], iconImage='DefaultVideo.png')
-                playlist.add(video['url'], li)
-            stream = stream[0]
-        if stream:
-            xbmcutil.reportUsage(self.addon_id, self.addon_id + '/play')
+                i += 1
+                if 'headers' in video.keys():
+                    playlist.append(xbmcutil.create_play_it(params['title'] + " [" + str(i) + "]", "", video['quality'], video['url'], subs=video['subs'], filename=params['title'], headers=video['headers']))
+                else:
+                    playlist.append(xbmcutil.create_play_it(params['title'] + " [" + str(i) + "]", "", video['quality'], video['url'], subs=video['subs'], filename=params['title']))
+            xbmcutil.add_playlist(params['title'], playlist)
+        elif stream:
             if 'headers' in stream.keys():
-                for header in stream['headers']:
-                    stream['url'] += '|%s=%s' % (header, stream['headers'][header])
-            print 'Sending %s to player' % stream['url']
-            li = xbmcgui.ListItem(path=stream['url'], iconImage='DefaulVideo.png')
-            if stream['quality'] == 'adaptive':
-                li.setProperty('inputstreamaddon','inputstream.adaptive')
-                li.setProperty('inputstream.adaptive.manifest_type','hls')
-            xbmcplugin.setResolvedUrl(int(sys.argv[1]), True, li)
-            xbmcutil.load_subtitles(stream['subs'])
+                xbmcutil.add_play(params['title'], "", stream['quality'], stream['url'], subs=stream['subs'], filename=params['title'], headers=stream['headers'])
+            else:
+                xbmcutil.add_play(params['title'], "", stream['quality'], stream['url'], subs=stream['subs'], filename=params['title'])
 
     def resolve(self, url):
         def select_cb(resolved):
             stream_parts = []
             stream_parts_dict = {}
-
-            if len(resolved) == 1 and resolved[0]['quality'] == 'adaptive':
-                return resolved[0]
 
             for stream in resolved:
                 if stream['surl'] not in stream_parts_dict:
@@ -76,27 +79,14 @@ class RtvsXBMCContentProvider(xbmcprovider.XBMCMultiResolverContentProvider):
                 stream_parts_dict[stream['surl']].append(stream)
 
             if len(stream_parts) == 1:
-                dialog = xbmcgui.Dialog()
                 quality = self.settings['quality'] or '0'
                 resolved = resolver.filter_by_quality(stream_parts_dict[stream_parts[0]], quality)
                 # if user requested something but 'ask me' or filtered result is exactly 1
                 if len(resolved) == 1 or int(quality) > 0:
                     return resolved[0]
-                opts = ['%s [%s]' % (r['title'], r['quality']) for r in resolved]
-                ret = dialog.select(xbmcutil.__lang__(30005), opts)
-                return resolved[ret]
-
-            quality = self.settings['quality'] or '0'
-            if quality == '0':
-                dialog = xbmcgui.Dialog()
-                opts = [__language__(30052), __language__(30053)]
-                ret = dialog.select(xbmcutil.__lang__(30005), opts)
-                if ret == 0:
-                    return [stream_parts_dict[p][0] for p in stream_parts]
-                elif ret == 1:
-                    return [stream_parts_dict[p][-1] for p in stream_parts]
-            else:
-                return [stream_parts_dict[p][0] for p in stream_parts]
+                return resolved
+            # requested to play all streams in given order - so return them all
+            return [stream_parts_dict[p][0] for p in stream_parts]
 
         item = self.provider.video_item()
         item.update({'url':url})
@@ -105,8 +95,4 @@ class RtvsXBMCContentProvider(xbmcprovider.XBMCMultiResolverContentProvider):
         except ResolveException, e:
             self._handle_exc(e)
 
-params = util.params()
-if params == {}:
-    xbmcutil.init_usage_reporting(__scriptid__)
-RtvsXBMCContentProvider(rtvs.RtvsContentProvider(tmp_dir=xbmc.translatePath(__addon__.getAddonInfo('profile'))), settings, __addon__).run(params)
-
+RtvsXBMCContentProvider(rtvs.RtvsContentProvider(),settings, __addon__,session).run(params)

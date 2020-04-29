@@ -36,7 +36,6 @@ import util
 from provider import ContentProvider
 
 import json
-import xbmc, xbmcaddon, xbmcgui
 
 START_AZ = '<div class=\"row tv__archive tv__archive--list\">'
 END_AZ = '<div class="footer'
@@ -78,23 +77,6 @@ def get_streams_from_manifest_url(url):
     return result
 
 def is_kodi_leia():
-    version = re.split("[, \-!?:]+", xbmc.getInfoLabel('System.BuildVersion'))[0]
-    if (float(version) >= 18):
-        #chceck if is inputstream.adaptive present
-        payload = {'jsonrpc': '2.0','id': 1,'method': 'Addons.GetAddonDetails','params': {'addonid': 'inputstream.adaptive','properties': ['enabled']}}
-        response = xbmc.executeJSONRPC(json.dumps(payload))
-        data = json.loads(response)
-        print(data)
-        if ('error' not in data.keys() and 
-                'result' in data.keys() and 
-                'addon' in data['result'].keys() and 
-                'enabled' in data['result']['addon'].keys() and 
-                data['result']['addon']['enabled']):
-            return True
-        else:
-            scriptid = 'plugin.video.rtvs.sk'
-            addon = xbmcaddon.Addon(id=scriptid)
-            xbmcgui.Dialog().ok(addon.getLocalizedString(31010), addon.getLocalizedString(31011), addon.getLocalizedString(31012), addon.getLocalizedString(31013))
     return False
 
 class RtvsContentProvider(ContentProvider):
